@@ -1,0 +1,107 @@
+﻿
+
+#include "compat_includes.inc"
+/*
+   Hyllian's DDT Shader
+   
+   Copyright (C) 2011-2016 Hyllian/Jararaca - sergiogdb@gmail.com
+
+   Permission is hereby granted, free of charge, to any person obtaining a copy
+   of this software and associated documentation files (the "Software"), to deal
+   in the Software without restriction, including without limitation the rights
+   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   copies of the Software, and to permit persons to whom the Software is
+   furnished to do so, subject to the following conditions:
+
+   The above copyright notice and this permission notice shall be included in
+   all copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+   THE SOFTWARE.
+*/
+
+
+														//---------------------------------------
+														// Input Pixel Mapping:  --|21|22|23|--
+														//                       19|06|07|08|09
+														//                       18|05|00|01|10
+														//                       17|04|03|02|11
+														//                       --|15|14|13|--
+														//
+														// Output Pixel Mapping:    06|07|08
+														//                          05|00|01
+														//                          04|03|02
+
+	const static float3 Y = float3(.2126, .7152, .0722);
+
+	float luma(float3 color)
+	{
+		return dot(color, Y);
+	}
+
+	float3 bilinear(float p, float q, float3 A, float3 B, float3 C, float3 D)
+	{
+		return ((1 - p)*(1 - q)*A + p*(1 - q)*B + (1 - p)*q*C + p*q*D);
+	}
+
+	float4 ddt(float2 texCoord, float4 t1, float2 loc, COMPAT_Texture2D(decal))
+	{
+		float2 pos = frac(loc) - float2(0.5, 0.5); // pos = pixel position
+		float2 dir = sign(pos); // dir = pixel direction
+
+		float2 g1 = dir*t1.xy;
+		float2 g2 = dir*t1.zw;
+
+		float3 A = COMPAT_SamplePoint(decal, texCoord).xyz;
+		float3 B = COMPAT_SamplePoint(decal, texCoord + g1).xyz;
+		float3 C = COMPAT_SamplePoint(decal, texCoord + g2).xyz;
+		float3 D = COMPAT_SamplePoint(decal, texCoord + g1 + g2).xyz;
+
+		float a = luma(A);
+		float b = luma(B);
+		float c = luma(C);
+		float d = luma(D);
+
+		float p = abs(pos.x);
+		float q = abs(pos.y);
+
+		float k = distance(pos, g1);
+		float l = distance(pos, g2);
+
+		float wd1 = abs(a - d);
+		float wd2 = abs(b - c);
+
+		if (wd1 < wd2)
+		{
+			if (k < l)
+			{
+				C = A + D - B;
+			}
+			else
+			{
+				B = A + D - C;
+			}
+		}
+		else if (wd1 > wd2)
+		{
+			D = B + C - A;
+		}
+
+		float3 color = bilinear(p, q, A, B, C, D);
+
+		return float4(color, 1.0);
+	}
+
+	//FRAGMENT SHADER
+	half4 main_fragment(out_vertex VAR) : COLOR
+	{
+		return ddt(VAR.texCoord, VAR.t1, VAR.loc, _BackgroundTexture);
+	}
+
+
+
